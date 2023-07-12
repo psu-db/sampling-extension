@@ -42,13 +42,13 @@ thread_local size_t level_sample_time = 0;
  */
 
 // True for mbuffer rejection sampling
-static constexpr bool LSM_REJ_SAMPLE = true;
+static constexpr bool REJECTION_SAMPLING = true;
 
 // True for leveling, false for tiering
-static constexpr bool LSM_LEVELING = false;
+static constexpr bool LAYOUT_POLICY = false;
 
 // True for tagging, false for tombstones
-static constexpr bool DELETE_TAGGING = true;
+static constexpr bool DELETE_POLICY = true;
 
 typedef ssize_t level_index;
 
@@ -73,7 +73,7 @@ public:
           m_max_tombstone_prop(max_tombstone_prop),
           m_max_rejection_rate(max_rejection_rate),
           m_last_level_idx(-1),
-          m_buffer(new MutableBuffer(mbuffer_cap, LSM_REJ_SAMPLE, max_tombstone_prop*mbuffer_cap, rng))
+          m_buffer(new MutableBuffer(mbuffer_cap, REJECTION_SAMPLING, max_tombstone_prop*mbuffer_cap, rng))
     {}
 
     ~SamplingFramework() {
@@ -94,7 +94,7 @@ public:
 
 
     int delete_record(const key_t& key, const value_t& val, gsl_rng *rng) {
-        assert(DELETE_TAGGING);
+        assert(DELETE_POLICY);
 
         // Check the levels first. This assumes there aren't 
         // any undeleted duplicate records.
@@ -168,7 +168,7 @@ public:
 
             TIMER_START();
             while (shard_samples[0] > 0) {
-                if (!LSM_REJ_SAMPLE && !mbuffer_alias) {
+                if (!REJECTION_SAMPLING && !mbuffer_alias) {
                     TIMER_START();
                     m_buffer->get_sample_range(&mbuffer_alias, &mbuffer_cutoff);
                     TIMER_STOP();
@@ -177,13 +177,13 @@ public:
                 }
 
                 const record_t* rec;
-                if (LSM_REJ_SAMPLE) {
+                if (REJECTION_SAMPLING) {
                     rec = m_buffer->get_sample(rng);
                 } else {
                     rec = m_buffer->get_record_at(mbuffer_alias->get(rng));
                 }
 
-                if (DELETE_TAGGING) {
+                if (DELETE_POLICY) {
                     if (rec && !rec->get_delete_status()) {
                         sample_set[sample_idx++] = *rec;
                     } else {
@@ -233,7 +233,7 @@ public:
 
         TIMER_START();
         // If tagging is enabled, we just need to check if the record has the delete tag set
-        if (DELETE_TAGGING) {
+        if (DELETE_POLICY) {
             TIMER_STOP();
             rejection_check_time += TIMER_RESULT();
             return record->get_delete_status();
@@ -282,7 +282,7 @@ public:
             }
         }
 
-        shards.emplace_back(new ShardWSS(m_buffer, nullptr, DELETE_TAGGING));
+        shards.emplace_back(new ShardWSS(m_buffer, nullptr, DELETE_POLICY));
 
         ShardWSS *shards_array[shards.size()];
 
@@ -293,7 +293,7 @@ public:
             }
         }
 
-        ShardWSS *flattened = new ShardWSS(shards_array, j, nullptr, DELETE_TAGGING);
+        ShardWSS *flattened = new ShardWSS(shards_array, j, nullptr, DELETE_POLICY);
 
         for (auto shard : shards) {
             delete shard;
@@ -404,12 +404,12 @@ private:
     inline level_index grow() {
         level_index new_idx;
 
-        size_t new_shard_cnt = (LSM_LEVELING) ? 1 : m_scale_factor;
+        size_t new_shard_cnt = (LAYOUT_POLICY) ? 1 : m_scale_factor;
         new_idx = m_levels.size();
         if (new_idx > 0) {
             assert(m_levels[new_idx - 1]->get_shard(0)->get_tombstone_count() == 0);
         }
-        m_levels.emplace_back(new Level(new_idx, new_shard_cnt, DELETE_TAGGING));
+        m_levels.emplace_back(new Level(new_idx, new_shard_cnt, DELETE_POLICY));
 
         m_last_level_idx++;
         return new_idx;
@@ -504,26 +504,26 @@ private:
         assert(!(!base_disk_level && incoming_disk_level));
 
         // merging two memory levels
-        if (LSM_LEVELING) {
+        if (LAYOUT_POLICY) {
             auto tmp = m_levels[base_idx];
-            m_levels[base_idx] = Level::merge_levels(m_levels[base_idx], m_levels[incoming_idx], DELETE_TAGGING, rng);
+            m_levels[base_idx] = Level::merge_levels(m_levels[base_idx], m_levels[incoming_idx], DELETE_POLICY, rng);
             mark_as_unused(tmp);
         } else {
             m_levels[base_idx]->append_merged_shards(m_levels[incoming_idx], rng);
         }
 
         mark_as_unused(m_levels[incoming_idx]);
-        m_levels[incoming_idx] = new Level(incoming_level, (LSM_LEVELING) ? 1 : m_scale_factor, DELETE_TAGGING);
+        m_levels[incoming_idx] = new Level(incoming_level, (LAYOUT_POLICY) ? 1 : m_scale_factor, DELETE_POLICY);
     }
 
     inline void merge_mbuffer_into_l0(MutableBuffer *mbuffer, gsl_rng *rng) {
         assert(m_levels[0]);
-        if (LSM_LEVELING) {
+        if (LAYOUT_POLICY) {
             // FIXME: Kludgey implementation due to interface constraints.
             auto old_level = m_levels[0];
-            auto temp_level = new Level(0, 1, DELETE_TAGGING);
+            auto temp_level = new Level(0, 1, DELETE_POLICY);
             temp_level->append_buffer(mbuffer, rng);
-            auto new_level = Level::merge_levels(old_level, temp_level, DELETE_TAGGING, rng);
+            auto new_level = Level::merge_levels(old_level, temp_level, DELETE_POLICY, rng);
 
             m_levels[0] = new_level;
             delete temp_level;
@@ -612,7 +612,7 @@ private:
             return false;
         }
 
-        if (LSM_LEVELING) {
+        if (LAYOUT_POLICY) {
             return m_levels[idx]->get_record_cnt() + incoming_rec_cnt <= calc_level_record_capacity(idx);
         } else {
             return m_levels[idx]->get_shard_count() < m_scale_factor;
