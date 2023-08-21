@@ -61,9 +61,9 @@ static bool insert_benchmark(extension::SamplingFramework *tree, std::fstream *f
 
                 if (deleted.find({key, val, weight}) == deleted.end()) {
                     if (extension::DELETE_POLICY) {
-                        tree->delete_record(key, val, g_rng);
+                        tree->delete_record(key, val);
                     } else {
-                        tree->append(key, val, weight, true, g_rng);
+                        tree->append(key, val, weight, true);
                     }
                     deleted.insert({key, val, weight});
                     local_deleted++;
@@ -71,7 +71,7 @@ static bool insert_benchmark(extension::SamplingFramework *tree, std::fstream *f
             }
 
             // insert the record;
-            tree->append(insert_vec[i].key, insert_vec[i].value, insert_vec[i].weight, false, g_rng);
+            tree->append(insert_vec[i].key, insert_vec[i].value, insert_vec[i].weight, false);
             local_inserted++;
         }
         auto insert_stop = std::chrono::high_resolution_clock::now();

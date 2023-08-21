@@ -251,7 +251,7 @@ static bool warmup(std::fstream *file, extension::SamplingFramework *extended, s
         }
 
         inserted++;
-        extended->append(key, val, weight, false, g_rng);
+        extended->append(key, val, weight, false);
 
         if (i > extended->get_buffer_capacity() && del_buf_ptr >= del_buf_size) {
             extended->range_sample(delbuf, del_buf_size, g_rng);
@@ -266,9 +266,9 @@ static bool warmup(std::fstream *file, extension::SamplingFramework *extended, s
 
             if (deleted_keys.find({key, val, weight}) == deleted_keys.end()) {
                 if (extension::DELETE_POLICY) {
-                    extended->delete_record(key, val, g_rng);
+                    extended->delete_record(key, val);
                 } else {
-                    extended->append(key, val, weight, true, g_rng);
+                    extended->append(key, val, weight, true);
                 }
                 deleted_keys.insert({key, val, weight});
             }
@@ -368,7 +368,7 @@ static void build_extended_index(extension::SamplingFramework *extended, std::fs
 
     size_t i=0;
     while (next_record(file, &key, &val, &weight)) {
-        auto res = extended->append(key, val, weight, false, g_rng);
+        auto res = extended->append(key, val, weight, false);
         assert(res);
     }
 }

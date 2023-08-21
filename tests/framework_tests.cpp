@@ -43,7 +43,7 @@ START_TEST(t_append)
     skey_t key = 0;
     value_t val = 0;
     for (size_t i=0; i<100; i++) {
-        ck_assert_int_eq(dynamic_extension->append(key, val, 1, false, g_rng), 1);
+        ck_assert_int_eq(dynamic_extension->append(key, val, 1, false), 1);
         key++;
         val++;
     }
@@ -63,7 +63,7 @@ START_TEST(t_append_with_mem_merges)
     skey_t key = 0;
     value_t val = 0;
     for (size_t i=0; i<300; i++) {
-        ck_assert_int_eq(dynamic_extension->append(key, val, 1, false, g_rng), 1);
+        ck_assert_int_eq(dynamic_extension->append(key, val, 1, false), 1);
         key++;
         val++;
     }
@@ -83,7 +83,7 @@ START_TEST(t_range_sample_buffer)
     skey_t key = 0;
     value_t val = 0;
     for (size_t i=0; i<100; i++) {
-        ck_assert_int_eq(dynamic_extension->append(key, val, 1, false, g_rng), 1);
+        ck_assert_int_eq(dynamic_extension->append(key, val, 1, false), 1);
         key++;
         val++;
     }
@@ -113,7 +113,7 @@ START_TEST(t_range_sample_levels)
     skey_t key = 0;
     value_t val = 0;
     for (size_t i=0; i<300; i++) {
-        ck_assert_int_eq(dynamic_extension->append(key, val, 1, false, g_rng), 1);
+        ck_assert_int_eq(dynamic_extension->append(key, val, 1, false), 1);
         key++;
         val++;
     }
@@ -171,7 +171,7 @@ START_TEST(t_range_sample_weighted)
             weight = 8.0;
         }
 
-        dynamic_extension->append(keys[i], i, weight, false, g_rng);
+        dynamic_extension->append(keys[i], i, weight, false);
     }
     size_t k = 1000;
     skey_t lower_key = 0;
@@ -221,7 +221,7 @@ START_TEST(t_tombstone_merging_01)
     for (auto rec : records) {
         //const char *key_ptr = (char *) &rec.first;
         //const char *val_ptr = (char *) &rec.second;
-        ck_assert_int_eq(dynamic_extension->append(rec.first, rec.second, 1, false, g_rng), 1);
+        ck_assert_int_eq(dynamic_extension->append(rec.first, rec.second, 1, false), 1);
 
          if (gsl_rng_uniform(g_rng) < 0.05 && !to_delete.empty()) {
             std::vector<std::pair<skey_t, value_t>> del_vec;
@@ -229,9 +229,9 @@ START_TEST(t_tombstone_merging_01)
 
             for (size_t i=0; i<del_vec.size(); i++) {
                 if (extension::DELETE_POLICY){
-                    dynamic_extension->delete_record(del_vec[i].first, del_vec[i].second, g_rng);
+                    dynamic_extension->delete_record(del_vec[i].first, del_vec[i].second);
                 } else {
-                    dynamic_extension->append(del_vec[i].first, del_vec[i].second, 1, true, g_rng);
+                    dynamic_extension->append(del_vec[i].first, del_vec[i].second, 1, true);
                 }
                 deletes++;
                 to_delete.erase(del_vec[i]);

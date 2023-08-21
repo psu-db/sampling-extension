@@ -82,7 +82,7 @@ public:
         }
     }
 
-    int append(const skey_t& key, const value_t& val, double weight, bool tombstone, gsl_rng *rng) {
+    int append(const skey_t& key, const value_t& val, double weight, bool tombstone) {
         if (m_buffer->is_full()) {
             merge_buffer();
         }
@@ -91,7 +91,7 @@ public:
     }
 
 
-    int delete_record(const skey_t& key, const value_t& val, gsl_rng *rng) {
+    int delete_record(const skey_t& key, const value_t& val) {
         assert(DELETE_POLICY);
 
         // Check the levels first. This assumes there aren't 
