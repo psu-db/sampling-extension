@@ -25,7 +25,7 @@ gsl_rng *g_rng = gsl_rng_alloc(gsl_rng_mt19937);
 
 static MutableBuffer *create_test_buffer(size_t cnt)
 {
-    auto buffer = new MutableBuffer(cnt, true, cnt);
+    auto buffer = new MutableBuffer(cnt, cnt);
 
     for (size_t i = 0; i < cnt; i++) {
         skey_t key = rand();
@@ -39,7 +39,7 @@ static MutableBuffer *create_test_buffer(size_t cnt)
 
 static MutableBuffer *create_weighted_buffer(size_t cnt)
 {
-    auto buffer = new MutableBuffer(cnt, true, cnt);
+    auto buffer = new MutableBuffer(cnt, cnt);
     
     // Put in half of the count with weight two.
     skey_t key = 1;
@@ -65,7 +65,7 @@ static MutableBuffer *create_weighted_buffer(size_t cnt)
 
 static MutableBuffer *create_double_seq_buffer(size_t cnt, bool ts=false) 
 {
-    auto buffer = new MutableBuffer(cnt, true, cnt);
+    auto buffer = new MutableBuffer(cnt, cnt);
 
     for (size_t i = 0; i < cnt / 2; i++) {
         skey_t key = i;
@@ -86,7 +86,7 @@ static MutableBuffer *create_double_seq_buffer(size_t cnt, bool ts=false)
 
 START_TEST(t_buffer_init)
 {
-    auto buffer = new MutableBuffer(1024, true, 1024);
+    auto buffer = new MutableBuffer(1024, 1024);
     for (uint64_t i = 512; i > 0; i--) {
         uint32_t v = i;
         buffer->append(i, v);
@@ -270,7 +270,7 @@ START_TEST(t_tombstone_check)
 {
     size_t cnt = 1024;
     size_t ts_cnt = 256;
-    auto buffer = new MutableBuffer(cnt + ts_cnt, true, ts_cnt);
+    auto buffer = new MutableBuffer(cnt + ts_cnt, ts_cnt);
 
     std::vector<record_t> tombstones;
 

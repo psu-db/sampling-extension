@@ -228,7 +228,7 @@ static void progress_update(double percentage, std::string prompt) {
 
 
 
-static bool warmup(std::fstream *file, extension::SamplingFramework *lsmtree, size_t count, double delete_prop, bool progress=true)
+static bool warmup(std::fstream *file, extension::SamplingFramework *extended, size_t count, double delete_prop, bool progress=true)
 {
     std::string line;
 
@@ -251,24 +251,24 @@ static bool warmup(std::fstream *file, extension::SamplingFramework *lsmtree, si
         }
 
         inserted++;
-        lsmtree->append(key, val, weight, false, g_rng);
+        extended->append(key, val, weight, false, g_rng);
 
-        if (i > lsmtree->get_buffer_capacity() && del_buf_ptr >= del_buf_size) {
-            lsmtree->range_sample(delbuf, del_buf_size, g_rng);
+        if (i > extended->get_buffer_capacity() && del_buf_ptr >= del_buf_size) {
+            extended->range_sample(delbuf, del_buf_size, g_rng);
             del_buf_ptr = 0;
             deleted_keys.clear();
         }
 
-        if (i > lsmtree->get_buffer_capacity() && gsl_rng_uniform(g_rng) < delete_prop) {
+        if (i > extended->get_buffer_capacity() && gsl_rng_uniform(g_rng) < delete_prop) {
             auto key = delbuf[del_buf_ptr].key;
             auto val = delbuf[del_buf_ptr].value;
             del_buf_ptr++;
 
             if (deleted_keys.find({key, val, weight}) == deleted_keys.end()) {
                 if (extension::DELETE_POLICY) {
-                    lsmtree->delete_record(key, val, g_rng);
+                    extended->delete_record(key, val, g_rng);
                 } else {
-                    lsmtree->append(key, val, weight, true, g_rng);
+                    extended->append(key, val, weight, true, g_rng);
                 }
                 deleted_keys.insert({key, val, weight});
             }
@@ -360,7 +360,7 @@ static void reset_extension_perf_metrics() {
 }
 
 
-static void build_lsm_tree(extension::SamplingFramework *tree, std::fstream *file) {
+static void build_extended_index(extension::SamplingFramework *extended, std::fstream *file) {
 
     extension::skey_t key;
     extension::value_t val;
@@ -368,7 +368,7 @@ static void build_lsm_tree(extension::SamplingFramework *tree, std::fstream *fil
 
     size_t i=0;
     while (next_record(file, &key, &val, &weight)) {
-        auto res = tree->append(key, val, weight, false, g_rng);
+        auto res = extended->append(key, val, weight, false, g_rng);
         assert(res);
     }
 }

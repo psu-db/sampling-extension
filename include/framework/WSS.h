@@ -61,7 +61,7 @@ public:
             ptr->header &= 1;
             m_data[m_reccnt++] = *ptr;
             m_total_weight+= ptr->weight;
-            weights.push_back(ptr->weight);
+            weights.push_back((double) ptr->weight);
 
             if (bf && ptr->is_tombstone()) {
                 m_tombstone_cnt++;

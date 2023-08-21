@@ -22,7 +22,7 @@ using namespace psudb;
 
 START_TEST(t_create)
 {
-    auto buffer = new MutableBuffer(100, true, 50);
+    auto buffer = new MutableBuffer(100, 50);
 
     ck_assert_ptr_nonnull(buffer);
     ck_assert_int_eq(buffer->get_capacity(), 100);
@@ -39,7 +39,7 @@ END_TEST
 
 START_TEST(t_insert)
 {
-    auto buffer = new MutableBuffer(100, true, 50);
+    auto buffer = new MutableBuffer(100, 50);
 
     skey_t key = 0;
     value_t val = 5;
@@ -72,7 +72,7 @@ END_TEST
 
 START_TEST(t_insert_tombstones)
 {
-    auto buffer = new MutableBuffer(100, true, 50);
+    auto buffer = new MutableBuffer(100, 50);
 
     skey_t key = 0;
     value_t val = 5;
@@ -115,7 +115,7 @@ END_TEST
 
 START_TEST(t_truncate)
 {
-    auto buffer = new MutableBuffer(100, true, 100);
+    auto buffer = new MutableBuffer(100, 100);
 
     skey_t key = 0;
     value_t val = 5;
@@ -157,7 +157,7 @@ START_TEST(t_sorted_output)
 {
     size_t cnt = 100;
 
-    auto buffer = new MutableBuffer(cnt, true, cnt/2);
+    auto buffer = new MutableBuffer(cnt, cnt/2);
 
     std::vector<skey_t> keys(cnt);
     for (size_t i=0; i<cnt-2; i++) {
@@ -201,7 +201,7 @@ void insert_records(std::vector<std::pair<skey_t, value_t>> *values, size_t star
 START_TEST(t_multithreaded_insert)
 {
     size_t cnt = 10000;
-    auto buffer = new MutableBuffer(cnt, true, cnt/2);
+    auto buffer = new MutableBuffer(cnt, cnt/2);
 
     std::vector<std::pair<skey_t, value_t>> records(cnt);
     for (size_t i=0; i<cnt; i++) {

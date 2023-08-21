@@ -26,7 +26,7 @@ thread_local size_t bounds_rejections = 0;
 thread_local size_t tombstone_rejections = 0;
 
 /*
- * thread_local size_t various_sampling_times go here.
+ * various sampling times go here.
  */
 thread_local size_t buffer_alias_time = 0;
 thread_local size_t alias_time = 0;
@@ -35,9 +35,8 @@ thread_local size_t rejection_check_time = 0;
 thread_local size_t buffer_sample_time = 0;
 thread_local size_t level_sample_time = 0;
 
-
 /*
- * LSM Tree configuration global variables
+ * Framework global configuration variables
  */
 
 // True for buffer rejection sampling
@@ -72,7 +71,7 @@ public:
           m_max_tombstone_prop(max_tombstone_prop),
           m_max_rejection_rate(max_rejection_rate),
           m_last_level_idx(-1),
-          m_buffer(new MutableBuffer(buffer_cap, REJECTION_SAMPLING, max_tombstone_prop*buffer_cap))
+          m_buffer(new MutableBuffer(buffer_cap, max_tombstone_prop*buffer_cap))
     {}
 
     ~SamplingFramework() {
@@ -396,9 +395,8 @@ private:
     }
 
     /*
-     * Add a new level to the LSM Tree and return that level's index. Will
-     * automatically determine whether the level should be on memory or on disk,
-     * and act appropriately.
+     * Add a new level and return that level's index. Will automatically determine 
+     * whether the level should be on memory or on disk, and act appropriately.
      */
     inline level_index grow() {
         level_index new_idx;

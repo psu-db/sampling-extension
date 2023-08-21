@@ -19,7 +19,7 @@ gsl_rng *g_rng = gsl_rng_alloc(gsl_rng_mt19937);
 
 static MutableBuffer *create_test_buffer(size_t cnt)
 {
-    auto buffer = new MutableBuffer(cnt, true, 0);
+    auto buffer = new MutableBuffer(cnt, 0);
 
     for (size_t i = 0; i < cnt; i++) {
         skey_t key = rand();
@@ -34,7 +34,7 @@ static MutableBuffer *create_test_buffer(size_t cnt)
 
 static MutableBuffer *create_double_seq_buffer(size_t cnt) 
 {
-    auto buffer = new MutableBuffer(cnt, true, 0);
+    auto buffer = new MutableBuffer(cnt, 0);
 
     for (size_t i = 0; i < cnt / 2; i++) {
         skey_t key = i;
