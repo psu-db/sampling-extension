@@ -390,10 +390,6 @@ private:
         return false;
     }
 
-    inline size_t shid_to_disk(ShardId shid) {
-        return shid.level_idx - m_levels.size();
-    }
-
     /*
      * Add a new level and return that level's index. Will automatically determine 
      * whether the level should be on memory or on disk, and act appropriately.
