@@ -15,10 +15,12 @@
 #include <numeric>
 #include <algorithm>
 
-#include "util/base.h"
-#include "util/bf_config.h"
+#include "base/weighted_sampling.h"
+
+#include "util/alignment.h"
+#include "base/bf_config.h"
 #include "ds/BloomFilter.h"
-#include "util/record.h"
+#include "base/record.h"
 #include "ds/Alias.h"
 #include  "util/timer.h"
 
@@ -27,16 +29,15 @@ namespace extension {
 
 class MutableBuffer {
 public:
-    MutableBuffer(size_t capacity, bool rej_sampling, size_t max_tombstone_cap, const gsl_rng* rng)
+    MutableBuffer(size_t capacity, bool rej_sampling, size_t max_tombstone_cap)
     : m_cap(capacity), m_tombstone_cap(max_tombstone_cap), m_reccnt(0)
     , m_tombstonecnt(0), m_weight(0), m_max_weight(0) {
         auto len = capacity * sizeof(record_t);
-        size_t aligned_buffersize = len + (CACHELINE_SIZE - (len % CACHELINE_SIZE));
-        m_data = (record_t*) std::aligned_alloc(CACHELINE_SIZE, aligned_buffersize);
+        size_t aligned_buffersize = len + (psudb::CACHELINE_SIZE - (len % psudb::CACHELINE_SIZE));
+        m_data = (record_t*) std::aligned_alloc(psudb::CACHELINE_SIZE, aligned_buffersize);
         m_tombstone_filter = nullptr;
         if (max_tombstone_cap > 0) {
-            assert(rng != nullptr);
-            m_tombstone_filter = new ds::BloomFilter(ds::BF_FPR, max_tombstone_cap, ds::BF_HASH_FUNCS, rng);
+            m_tombstone_filter = new psudb::BloomFilter<skey_t>(BF_FPR, max_tombstone_cap, BF_HASH_FUNCS);
         }
     }
 
@@ -94,7 +95,7 @@ public:
     record_t* sorted_output() {
         TIMER_INIT();
         TIMER_START();
-        std::sort(m_data, m_data + m_reccnt.load(), memtable_record_cmp);
+        std::sort(m_data, m_data + m_reccnt.load(), buffer_record_cmp);
         TIMER_STOP();
 
         #ifdef INSTRUMENT_MERGING
@@ -119,10 +120,10 @@ public:
         return m_tombstonecnt.load();
     }
 
-    bool delete_record(const key_t& key, const value_t& val) {
+    bool delete_record(const record_t &rec) {
         auto offset = 0;
         while (offset < m_reccnt.load()) {
-            if (m_data[offset].match(key, val, false)) {
+            if (m_data[offset] == rec) {
                 m_data[offset].set_delete_status();
                 return true;
             }
@@ -132,12 +133,12 @@ public:
         return false;
     }
 
-    bool check_tombstone(const key_t& key, const value_t& value) {
-        if (m_tombstone_filter && !m_tombstone_filter->lookup(key)) return false;
+    bool check_tombstone(const record_t &rec) {
+        if (m_tombstone_filter && !m_tombstone_filter->lookup(rec.key)) return false;
 
         auto offset = 0;
         while (offset < m_reccnt.load()) {
-            if (m_data[offset].match(key, value, true)) return true;
+            if (m_data[offset] == rec && m_data[offset].is_tombstone()) return true;
             offset++;;
         }
         return false;
@@ -152,10 +153,10 @@ public:
     }
 
     size_t get_aux_memory_usage() {
-        return m_tombstone_filter->get_memory_usage();
+        return m_tombstone_filter->memory_usage();
     }
 
-    double get_sample_range(ds::Alias **alias, size_t *cutoff) {
+    double get_sample_range(psudb::Alias **alias, size_t *cutoff) {
       *cutoff = std::atomic_load(&m_reccnt) - 1;
       std::vector<double> weights((*cutoff) + 1);
 
@@ -173,7 +174,7 @@ public:
         weights[i] = weights[i] / tot_weight;
       }
 
-      *alias = new ds::Alias(weights);
+      *alias = new psudb::Alias(weights);
 
       return tot_weight;
     }
@@ -213,15 +214,12 @@ private:
     }
 
     size_t m_cap;
-    //size_t m_buffersize;
     size_t m_tombstone_cap;
     
-    //char* m_data;
     record_t* m_data;
-    ds::BloomFilter* m_tombstone_filter;
+    psudb::BloomFilter<skey_t>* m_tombstone_filter;
 
     alignas(64) std::atomic<size_t> m_tombstonecnt;
-    //alignas(64) std::atomic<uint32_t> m_current_tail;
     alignas(64) std::atomic<uint32_t> m_reccnt;
     alignas(64) std::atomic<double> m_weight;
     alignas(64) std::atomic<double> m_max_weight;

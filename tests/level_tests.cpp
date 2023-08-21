@@ -11,63 +11,63 @@
 
 #include "framework/WSS.h"
 #include "framework/Level.h"
-#include "util/bf_config.h"
+#include "base/bf_config.h"
 
 using namespace extension;
 
 gsl_rng *g_rng = gsl_rng_alloc(gsl_rng_mt19937);
 
-static MutableBuffer *create_test_membuffer(size_t cnt)
+static MutableBuffer *create_test_buffer(size_t cnt)
 {
-    auto mbuffer = new MutableBuffer(cnt, true, 0, g_rng);
+    auto buffer = new MutableBuffer(cnt, true, 0);
 
     for (size_t i = 0; i < cnt; i++) {
-        extension::key_t key = rand();
-        extension::value_t val = rand();
+        skey_t key = rand();
+        value_t val = rand();
 
-        mbuffer->append(key, val);
+        buffer->append(key, val);
     }
 
-    return mbuffer;
+    return buffer;
 }
 
 
-static MutableBuffer *create_double_seq_membuffer(size_t cnt) 
+static MutableBuffer *create_double_seq_buffer(size_t cnt) 
 {
-    auto mbuffer = new MutableBuffer(cnt, true, 0, g_rng);
+    auto buffer = new MutableBuffer(cnt, true, 0);
 
     for (size_t i = 0; i < cnt / 2; i++) {
-        extension::key_t key = i;
-        extension::value_t val = i;
+        skey_t key = i;
+        value_t val = i;
 
-        mbuffer->append(key, val);
+        buffer->append(key, val);
     }
 
     for (size_t i = 0; i < cnt / 2; i++) {
-        extension::key_t key = i;
-        extension::value_t val = i + 1;
+        skey_t key = i;
+        value_t val = i + 1;
 
-        mbuffer->append(key, val);
+        buffer->append(key, val);
     }
 
-    return mbuffer;
+    return buffer;
 }
 
 START_TEST(t_memlevel_merge)
 {
-    auto tbl1 = create_test_membuffer(100);
-    auto tbl2 = create_test_membuffer(100);
+    auto tbl1 = create_test_buffer(100);
+    auto tbl2 = create_test_buffer(100);
 
     auto base_level = new Level(1, 1, false);
-    base_level->append_buffer(tbl1, g_rng);
+    base_level->append_buffer(tbl1);
     ck_assert_int_eq(base_level->get_record_cnt(), 100);
 
     auto merging_level = new Level(0, 1, false);
-    merging_level->append_buffer(tbl2, g_rng);
+    merging_level->append_buffer(tbl2);
     ck_assert_int_eq(merging_level->get_record_cnt(), 100);
 
     auto old_level = base_level;
-    base_level = Level::merge_levels(old_level, merging_level, false, g_rng);
+    base_level = Level::merge_levels(old_level, merging_level, false);
 
     delete old_level;
     delete merging_level;

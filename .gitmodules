@@ -1,0 +1,3 @@
+[submodule "external/psudb-common"]
+	path = external/psudb-common
+	url = git@github.com:PSU-Database-Systems-Group/psudb-common.git

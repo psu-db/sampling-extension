@@ -25,7 +25,7 @@ bool roughly_equal(int n1, int n2, size_t mag, double epsilon) {
 
 START_TEST(t_create)
 {
-    auto dynamic_extension = new SamplingFramework(100, 2, 1, 100, g_rng);
+    auto dynamic_extension = new SamplingFramework(100, 2, 1, 100);
 
     ck_assert_ptr_nonnull(dynamic_extension);
     ck_assert_int_eq(dynamic_extension->get_record_cnt(), 0);
@@ -38,10 +38,10 @@ END_TEST
 
 START_TEST(t_append)
 {
-    auto dynamic_extension = new SamplingFramework(100, 2, 1, 100, g_rng);
+    auto dynamic_extension = new SamplingFramework(100, 2, 1, 100);
 
-    extension::key_t key = 0;
-    extension::value_t val = 0;
+    skey_t key = 0;
+    value_t val = 0;
     for (size_t i=0; i<100; i++) {
         ck_assert_int_eq(dynamic_extension->append(key, val, 1, false, g_rng), 1);
         key++;
@@ -58,10 +58,10 @@ END_TEST
 
 START_TEST(t_append_with_mem_merges)
 {
-    auto dynamic_extension = new SamplingFramework(100, 2, 1, 100, g_rng);
+    auto dynamic_extension = new SamplingFramework(100, 2, 1, 100);
 
-    extension::key_t key = 0;
-    extension::value_t val = 0;
+    skey_t key = 0;
+    value_t val = 0;
     for (size_t i=0; i<300; i++) {
         ck_assert_int_eq(dynamic_extension->append(key, val, 1, false, g_rng), 1);
         key++;
@@ -76,20 +76,20 @@ START_TEST(t_append_with_mem_merges)
 END_TEST
 
 
-START_TEST(t_range_sample_mbuffer)
+START_TEST(t_range_sample_buffer)
 {
-    auto dynamic_extension = new SamplingFramework(100, 2, 1, 100, g_rng);
+    auto dynamic_extension = new SamplingFramework(100, 2, 1, 100);
 
-    extension::key_t key = 0;
-    extension::value_t val = 0;
+    skey_t key = 0;
+    value_t val = 0;
     for (size_t i=0; i<100; i++) {
         ck_assert_int_eq(dynamic_extension->append(key, val, 1, false, g_rng), 1);
         key++;
         val++;
     }
 
-    extension::key_t lower_bound = 0;
-    extension::key_t upper_bound = 100;
+    skey_t lower_bound = 0;
+    skey_t upper_bound = 100;
 
     //char sample_set[100*record_size];
     record_t sample_set[100];
@@ -108,18 +108,18 @@ END_TEST
 
 START_TEST(t_range_sample_levels)
 {
-    auto dynamic_extension = new SamplingFramework(100, 2, 1, 100, g_rng);
+    auto dynamic_extension = new SamplingFramework(100, 2, 1, 100);
 
-    extension::key_t key = 0;
-    extension::value_t val = 0;
+    skey_t key = 0;
+    value_t val = 0;
     for (size_t i=0; i<300; i++) {
         ck_assert_int_eq(dynamic_extension->append(key, val, 1, false, g_rng), 1);
         key++;
         val++;
     }
 
-    extension::key_t lower_bound = 0;
-    extension::key_t upper_bound = 300;
+    skey_t lower_bound = 0;
+    skey_t upper_bound = 300;
 
     record_t sample_set[100];
     dynamic_extension->range_sample(sample_set, 100, g_rng);
@@ -135,12 +135,12 @@ END_TEST
 
 START_TEST(t_range_sample_weighted)
 {
-    auto dynamic_extension = new SamplingFramework(100, 2, 1, 100, g_rng);
+    auto dynamic_extension = new SamplingFramework(100, 2, 1, 100);
     size_t n = 10000;
 
-    std::vector<extension::key_t> keys;
+    std::vector<skey_t> keys;
 
-    extension::key_t key = 1;
+    skey_t key = 1;
     for (size_t i=0; i< n / 2; i++) {
         keys.push_back(key);
     }
@@ -174,18 +174,17 @@ START_TEST(t_range_sample_weighted)
         dynamic_extension->append(keys[i], i, weight, false, g_rng);
     }
     size_t k = 1000;
-    extension::key_t lower_key = 0;
-    extension::key_t upper_key = 5;
+    skey_t lower_key = 0;
+    skey_t upper_key = 5;
 
-    //char *buffer = new char[k*extension::record_size]();
-    record_t* buffer = new record_t[k]();
+    record_t* buff = new record_t[k]();
 
     size_t cnt[3] = {0};
     for (size_t i=0; i<1000; i++) {
-        dynamic_extension->range_sample(buffer, k, g_rng);
+        dynamic_extension->range_sample(buff, k, g_rng);
 
         for (size_t j=0; j<k; j++) {
-            cnt[buffer[j].key - 1]++;
+            cnt[buff[j].key - 1]++;
         }
     }
 
@@ -194,7 +193,7 @@ START_TEST(t_range_sample_weighted)
     ck_assert(roughly_equal(cnt[2] / 1000, (double) k/2.0, k, .05));
 
     delete dynamic_extension;
-    delete[] buffer;
+    delete[] buff;
 }
 END_TEST
 
@@ -202,15 +201,15 @@ END_TEST
 START_TEST(t_tombstone_merging_01)
 {
     size_t reccnt = 100000;
-    auto dynamic_extension = new SamplingFramework(100, 2, .01, 100, g_rng);
+    auto dynamic_extension = new SamplingFramework(100, 2, .01, 100);
 
-    std::set<std::pair<extension::key_t, extension::value_t>> records; 
-    std::set<std::pair<extension::key_t, extension::value_t>> to_delete;
-    std::set<std::pair<extension::key_t, extension::value_t>> deleted;
+    std::set<std::pair<skey_t, value_t>> records; 
+    std::set<std::pair<skey_t, value_t>> to_delete;
+    std::set<std::pair<skey_t, value_t>> deleted;
 
     while (records.size() < reccnt) {
-        extension::key_t key = rand();
-        extension::value_t val = rand();
+        skey_t key = rand();
+        value_t val = rand();
 
         if (records.find({key, val}) != records.end()) continue;
 
@@ -225,13 +224,11 @@ START_TEST(t_tombstone_merging_01)
         ck_assert_int_eq(dynamic_extension->append(rec.first, rec.second, 1, false, g_rng), 1);
 
          if (gsl_rng_uniform(g_rng) < 0.05 && !to_delete.empty()) {
-            std::vector<std::pair<extension::key_t, extension::value_t>> del_vec;
+            std::vector<std::pair<skey_t, value_t>> del_vec;
             std::sample(to_delete.begin(), to_delete.end(), std::back_inserter(del_vec), 3, std::mt19937{std::random_device{}()});
 
             for (size_t i=0; i<del_vec.size(); i++) {
-                //const char *d_key_ptr = (char *) &del_vec[i].first;
-                //const char *d_val_ptr = (char *) &del_vec[i].second;
-                if (extension::DELETE_TAGGING) {
+                if (extension::DELETE_POLICY){
                     dynamic_extension->delete_record(del_vec[i].first, del_vec[i].second, g_rng);
                 } else {
                     dynamic_extension->append(del_vec[i].first, del_vec[i].second, 1, true, g_rng);
@@ -270,7 +267,7 @@ Suite *unit_testing()
     suite_add_tcase(unit, append);
 
     TCase *sampling = tcase_create("extension::SamplingFramework::range_sample Testing");
-    tcase_add_test(sampling, t_range_sample_mbuffer);
+    tcase_add_test(sampling, t_range_sample_buffer);
     tcase_add_test(sampling, t_range_sample_levels);
     tcase_add_test(sampling, t_range_sample_weighted);
 

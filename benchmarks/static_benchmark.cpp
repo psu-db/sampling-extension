@@ -54,7 +54,7 @@ int main(int argc, char **argv)
 
     init_bench_env(record_count, true, use_osm);
 
-    auto de_wss = extension::SamplingFramework(12000, 6, 1, 100, g_rng);
+    auto de_wss = extension::SamplingFramework(12000, 6, 1, 100);
 
     std::fstream datafile;
     datafile.open(filename, std::ios::in);

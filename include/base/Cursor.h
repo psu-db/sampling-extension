@@ -11,8 +11,8 @@
 
 #include <vector>
 
-#include "util/base.h"
-#include "util/record.h"
+#include "util/alignment.h"
+#include "base/record.h"
 
 namespace extension {
 struct Cursor {

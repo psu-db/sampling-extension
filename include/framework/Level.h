@@ -12,8 +12,8 @@
 #include <vector>
 #include <memory>
 
-#include "util/types.h"
-#include "util/bf_config.h"
+#include "base/types.h"
+#include "base/bf_config.h"
 #include "framework/WSS.h"
 #include "ds/BloomFilter.h"
 
@@ -29,7 +29,7 @@ private:
         InternalLevelStructure(size_t cap)
         : m_cap(cap)
         , m_shards(new ShardWSS*[cap]{nullptr})
-        , m_bfs(new ds::BloomFilter*[cap]{nullptr}) {} 
+        , m_bfs(new psudb::BloomFilter<skey_t>*[cap]{nullptr}) {} 
 
         ~InternalLevelStructure() {
             for (size_t i = 0; i < m_cap; ++i) {
@@ -43,7 +43,7 @@ private:
 
         size_t m_cap;
         ShardWSS** m_shards;
-        ds::BloomFilter** m_bfs;
+        psudb::BloomFilter<skey_t>** m_bfs;
     };
 
 public:
@@ -66,14 +66,14 @@ public:
 
     // WARNING: for leveling only.
     // assuming the base level is the level new level is merging into. (base_level is larger.)
-    static Level* merge_levels(Level* base_level, Level* new_level, bool tagging, const gsl_rng* rng) {
+    static Level* merge_levels(Level* base_level, Level* new_level, bool tagging) {
         assert(base_level->m_level_no > new_level->m_level_no || (base_level->m_level_no == 0 && new_level->m_level_no == 0));
         auto res = new Level(base_level->m_level_no, 1, tagging);
         res->m_shard_cnt = 1;
         res->m_structure->m_bfs[0] =
-            new ds::BloomFilter(ds::BF_FPR,
+            new psudb::BloomFilter<skey_t>(BF_FPR,
                             new_level->get_tombstone_count() + base_level->get_tombstone_count(),
-                            ds::BF_HASH_FUNCS, rng);
+                            BF_HASH_FUNCS);
         ShardWSS* shards[2];
         shards[0] = base_level->m_structure->m_shards[0];
         shards[1] = new_level->m_structure->m_shards[0];
@@ -82,16 +82,16 @@ public:
         return res;
     }
 
-    void append_buffer(MutableBuffer* mbuffer, const gsl_rng* rng) {
+    void append_buffer(MutableBuffer* mbuffer) {
         assert(m_shard_cnt < m_structure->m_cap);
-        m_structure->m_bfs[m_shard_cnt] = new ds::BloomFilter(ds::BF_FPR, mbuffer->get_tombstone_count(), ds::BF_HASH_FUNCS, rng);
+        m_structure->m_bfs[m_shard_cnt] = new psudb::BloomFilter<skey_t>(BF_FPR, mbuffer->get_tombstone_count(), BF_HASH_FUNCS);
         m_structure->m_shards[m_shard_cnt] = new ShardWSS(mbuffer, m_structure->m_bfs[m_shard_cnt], m_tagging);
         ++m_shard_cnt;
     }
 
-    void append_merged_shards(Level* level, const gsl_rng* rng) {
+    void append_merged_shards(Level* level) {
         assert(m_shard_cnt < m_structure->m_cap);
-        m_structure->m_bfs[m_shard_cnt] = new ds::BloomFilter(ds::BF_FPR, level->get_tombstone_count(), ds::BF_HASH_FUNCS, rng);
+        m_structure->m_bfs[m_shard_cnt] = new psudb::BloomFilter<skey_t>(BF_FPR, level->get_tombstone_count(), BF_HASH_FUNCS);
         m_structure->m_shards[m_shard_cnt] = new ShardWSS(level->m_structure->m_shards, level->m_shard_cnt, m_structure->m_bfs[m_shard_cnt], m_tagging);
         ++m_shard_cnt;
     }
@@ -106,7 +106,7 @@ public:
         return new ShardWSS(shards, m_shard_cnt, nullptr, m_tagging);
     }
 
-    // Append the sample range in-order.....
+    // Append the sample range in-order
     void get_shard_weights(std::vector<double>& weights, std::vector<std::pair<ShardId, ShardWSS *>> &shards) {
         for (size_t i=0; i<m_shard_cnt; i++) {
             if (m_structure->m_shards[i] && m_structure->m_shards[i]->get_total_weight() > 0) {
@@ -124,20 +124,20 @@ public:
         return false;
     }
 
-    bool check_tombstone(size_t shard_stop, const key_t& key, const value_t& val) {
+    bool check_tombstone(size_t shard_stop, const record_t &rec) {
         if (m_shard_cnt == 0) return false;
 
         for (int i = m_shard_cnt - 1; i >= (ssize_t) shard_stop;  i--) {
-            if (m_structure->m_shards[i] && (m_structure->m_bfs[i]->lookup(key))
-                && m_structure->m_shards[i]->check_tombstone(key, val))
+            if (m_structure->m_shards[i] && (m_structure->m_bfs[i]->lookup(rec.key))
+                && m_structure->m_shards[i]->check_tombstone(rec))
                 return true;
         }
         return false;
     }
 
-    bool delete_record(const key_t& key, const value_t& val) {
+    bool delete_record(const record_t &rec) {
         for (size_t i = 0; i < m_structure->m_cap;  ++i) {
-            if (m_structure->m_shards[i] && m_structure->m_shards[i]->delete_record(key, val)) {
+            if (m_structure->m_shards[i] && m_structure->m_shards[i]->delete_record(rec)) {
                 return true;
             }
         }
@@ -178,7 +178,7 @@ public:
         size_t cnt = 0;
         for (size_t i=0; i<m_shard_cnt; i++) {
             if (m_structure->m_bfs[i]) {
-                cnt += m_structure->m_bfs[i]->get_memory_usage();
+                cnt += m_structure->m_bfs[i]->memory_usage();
             }
         }
 

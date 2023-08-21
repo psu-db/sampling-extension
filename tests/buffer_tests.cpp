@@ -18,57 +18,53 @@
 #include "framework/MutableBuffer.h"
 
 using namespace extension;
-using namespace ds;
+using namespace psudb;
 
 START_TEST(t_create)
 {
-    auto rng = gsl_rng_alloc(gsl_rng_mt19937);
-    auto mbuffer = new MutableBuffer(100, true, 50, rng);
+    auto buffer = new MutableBuffer(100, true, 50);
 
-    ck_assert_ptr_nonnull(mbuffer);
-    ck_assert_int_eq(mbuffer->get_capacity(), 100);
-    ck_assert_int_eq(mbuffer->get_record_count(), 0);
-    ck_assert_int_eq(mbuffer->is_full(), false);
-    ck_assert_ptr_nonnull(mbuffer->sorted_output());
-    ck_assert_int_eq(mbuffer->get_tombstone_count(), 0);
-    ck_assert_int_eq(mbuffer->get_tombstone_capacity(), 50);
+    ck_assert_ptr_nonnull(buffer);
+    ck_assert_int_eq(buffer->get_capacity(), 100);
+    ck_assert_int_eq(buffer->get_record_count(), 0);
+    ck_assert_int_eq(buffer->is_full(), false);
+    ck_assert_ptr_nonnull(buffer->sorted_output());
+    ck_assert_int_eq(buffer->get_tombstone_count(), 0);
+    ck_assert_int_eq(buffer->get_tombstone_capacity(), 50);
 
-    delete mbuffer;
-    gsl_rng_free(rng);
+    delete buffer;
 }
 END_TEST
 
 
 START_TEST(t_insert)
 {
-    auto rng = gsl_rng_alloc(gsl_rng_mt19937);
-    auto mbuffer = new MutableBuffer(100, true, 50, rng);
+    auto buffer = new MutableBuffer(100, true, 50);
 
-    extension::key_t key = 0;
-    extension::value_t val = 5;
+    skey_t key = 0;
+    value_t val = 5;
 
     for (size_t i=0; i<99; i++) {
-        ck_assert_int_eq(mbuffer->append(key, val, 1.0, false), 1);
-        ck_assert_int_eq(mbuffer->check_tombstone(key, val), 0);
+        ck_assert_int_eq(buffer->append(key, val, 1.0, false), 1);
+        ck_assert_int_eq(buffer->check_tombstone({key, val}), 0);
 
         key++;
         val++;
 
-        ck_assert_int_eq(mbuffer->get_record_count(), i+1);
-        ck_assert_int_eq(mbuffer->get_tombstone_count(), 0);
-        ck_assert_int_eq(mbuffer->is_full(), 0);
+        ck_assert_int_eq(buffer->get_record_count(), i+1);
+        ck_assert_int_eq(buffer->get_tombstone_count(), 0);
+        ck_assert_int_eq(buffer->is_full(), 0);
     }
 
-    ck_assert_int_eq(mbuffer->append(key, val, 1.0, false), 1);
+    ck_assert_int_eq(buffer->append(key, val, 1.0, false), 1);
 
     key++;
     val++;
 
-    ck_assert_int_eq(mbuffer->is_full(), 1);
-    ck_assert_int_eq(mbuffer->append(key, val, 1.0, false), 0);
+    ck_assert_int_eq(buffer->is_full(), 1);
+    ck_assert_int_eq(buffer->append(key, val, 1.0, false), 0);
 
-    delete mbuffer;
-    gsl_rng_free(rng);
+    delete buffer;
 
 }
 END_TEST
@@ -76,11 +72,10 @@ END_TEST
 
 START_TEST(t_insert_tombstones)
 {
-    auto rng = gsl_rng_alloc(gsl_rng_mt19937);
-    auto mbuffer = new MutableBuffer(100, true, 50, rng);
+    auto buffer = new MutableBuffer(100, true, 50);
 
-    extension::key_t key = 0;
-    extension::value_t val = 5;
+    skey_t key = 0;
+    value_t val = 5;
     size_t ts_cnt = 0;
 
     for (size_t i=0; i<99; i++) {
@@ -90,42 +85,40 @@ START_TEST(t_insert_tombstones)
             ts=true;
         }
 
-        ck_assert_int_eq(mbuffer->append(key, val, 1.0, ts), 1);
-        ck_assert_int_eq(mbuffer->check_tombstone(key, val), ts);
+        ck_assert_int_eq(buffer->append(key, val, 1.0, ts), 1);
+        ck_assert_int_eq(buffer->check_tombstone({key, val}), ts);
 
         key++;
         val++;
 
-        ck_assert_int_eq(mbuffer->get_record_count(), i+1);
-        ck_assert_int_eq(mbuffer->get_tombstone_count(), ts_cnt);
-        ck_assert_int_eq(mbuffer->is_full(), 0);
+        ck_assert_int_eq(buffer->get_record_count(), i+1);
+        ck_assert_int_eq(buffer->get_tombstone_count(), ts_cnt);
+        ck_assert_int_eq(buffer->is_full(), 0);
     }
 
     // inserting one more tombstone should not be possible
-    ck_assert_int_eq(mbuffer->append(key, val, 1.0, true), 0);
+    ck_assert_int_eq(buffer->append(key, val, 1.0, true), 0);
 
 
-    ck_assert_int_eq(mbuffer->append(key, val, 1.0, false), 1);
+    ck_assert_int_eq(buffer->append(key, val, 1.0, false), 1);
 
     key++;
     val++;
 
-    ck_assert_int_eq(mbuffer->is_full(), 1);
-    ck_assert_int_eq(mbuffer->append(key, val, 1.0, false), 0);
+    ck_assert_int_eq(buffer->is_full(), 1);
+    ck_assert_int_eq(buffer->append(key, val, 1.0, false), 0);
 
-    delete mbuffer;
-    gsl_rng_free(rng);
+    delete buffer;
 }
 END_TEST
 
 
 START_TEST(t_truncate)
 {
-    auto rng = gsl_rng_alloc(gsl_rng_mt19937);
-    auto mbuffer = new MutableBuffer(100, true, 100, rng);
+    auto buffer = new MutableBuffer(100, true, 100);
 
-    extension::key_t key = 0;
-    extension::value_t val = 5;
+    skey_t key = 0;
+    value_t val = 5;
     size_t ts_cnt = 0;
 
     for (size_t i=0; i<100; i++) {
@@ -135,29 +128,27 @@ START_TEST(t_truncate)
             ts=true;
         }
 
-        ck_assert_int_eq(mbuffer->append(key, val, 1.0, ts), 1);
-        ck_assert_int_eq(mbuffer->check_tombstone(key, val), ts);
+        ck_assert_int_eq(buffer->append(key, val, 1.0, ts), 1);
+        ck_assert_int_eq(buffer->check_tombstone({key, val}), ts);
 
         key++;
         val++;
 
-        ck_assert_int_eq(mbuffer->get_record_count(), i+1);
-        ck_assert_int_eq(mbuffer->get_tombstone_count(), ts_cnt);
+        ck_assert_int_eq(buffer->get_record_count(), i+1);
+        ck_assert_int_eq(buffer->get_tombstone_count(), ts_cnt);
     }
 
-    ck_assert_int_eq(mbuffer->is_full(), 1);
-    ck_assert_int_eq(mbuffer->append(key, val, 1.0, false), 0);
+    ck_assert_int_eq(buffer->is_full(), 1);
+    ck_assert_int_eq(buffer->append(key, val, 1.0, false), 0);
 
-    ck_assert_int_eq(mbuffer->truncate(), 1);
+    ck_assert_int_eq(buffer->truncate(), 1);
 
-    ck_assert_int_eq(mbuffer->is_full(), 0);
-    ck_assert_int_eq(mbuffer->get_record_count(), 0);
-    ck_assert_int_eq(mbuffer->get_tombstone_count(), 0);
-    ck_assert_int_eq(mbuffer->append(key, val, 1.0, false), 1);
+    ck_assert_int_eq(buffer->is_full(), 0);
+    ck_assert_int_eq(buffer->get_record_count(), 0);
+    ck_assert_int_eq(buffer->get_tombstone_count(), 0);
+    ck_assert_int_eq(buffer->append(key, val, 1.0, false), 1);
 
-    delete mbuffer;
-    gsl_rng_free(rng);
-
+    delete buffer;
 }
 END_TEST
 
@@ -166,11 +157,9 @@ START_TEST(t_sorted_output)
 {
     size_t cnt = 100;
 
-    auto rng = gsl_rng_alloc(gsl_rng_mt19937);
-    auto mbuffer = new MutableBuffer(cnt, true, cnt/2, rng);
+    auto buffer = new MutableBuffer(cnt, true, cnt/2);
 
-
-    std::vector<extension::key_t> keys(cnt);
+    std::vector<skey_t> keys(cnt);
     for (size_t i=0; i<cnt-2; i++) {
         keys[i] = rand();
     }
@@ -180,32 +169,31 @@ START_TEST(t_sorted_output)
     keys[cnt-2] =  keys[cnt-3];
     keys[cnt-1] =  keys[cnt-2];
 
-    extension::value_t val = 12345;
+    value_t val = 12345;
     for (size_t i=0; i<cnt-2; i++) {
-        mbuffer->append(keys[i], val, 1.0, false);
+        buffer->append(keys[i], val, 1.0, false);
     }
 
-    mbuffer->append(keys[cnt-2], val, 1.0, true);
-    mbuffer->append(keys[cnt-1], val, 1.0, true);
+    buffer->append(keys[cnt-2], val, 1.0, true);
+    buffer->append(keys[cnt-1], val, 1.0, true);
 
 
-    record_t *sorted_records = mbuffer->sorted_output();
+    record_t *sorted_records = buffer->sorted_output();
     std::sort(keys.begin(), keys.end());
 
     for (size_t i=0; i<cnt; i++) {
         ck_assert_int_eq(sorted_records[i].key, keys[i]);
     }
 
-    delete mbuffer;
-    gsl_rng_free(rng);
+    delete buffer;
 }
 END_TEST
 
 
-void insert_records(std::vector<std::pair<extension::key_t, extension::value_t>> *values, size_t start, size_t stop, MutableBuffer *mbuffer)
+void insert_records(std::vector<std::pair<skey_t, value_t>> *values, size_t start, size_t stop, MutableBuffer *buffer)
 {
     for (size_t i=start; i<stop; i++) {
-        mbuffer->append((*values)[i].first, (*values)[i].second, 1.0);
+        buffer->append((*values)[i].first, (*values)[i].second, 1.0);
     }
 
 }
@@ -213,10 +201,9 @@ void insert_records(std::vector<std::pair<extension::key_t, extension::value_t>>
 START_TEST(t_multithreaded_insert)
 {
     size_t cnt = 10000;
-    auto rng = gsl_rng_alloc(gsl_rng_mt19937);
-    auto mbuffer = new MutableBuffer(cnt, true, cnt/2, rng);
+    auto buffer = new MutableBuffer(cnt, true, cnt/2);
 
-    std::vector<std::pair<extension::key_t, extension::value_t>> records(cnt);
+    std::vector<std::pair<skey_t, value_t>> records(cnt);
     for (size_t i=0; i<cnt; i++) {
         records[i] = {rand(), rand()};
     }
@@ -228,7 +215,7 @@ START_TEST(t_multithreaded_insert)
     size_t start = 0;
     size_t stop = start + per_thread;
     for (size_t i=0; i<thread_cnt; i++) {
-        workers[i] = std::thread(insert_records, &records, start, stop, mbuffer);
+        workers[i] = std::thread(insert_records, &records, start, stop, buffer);
         start = stop;
         stop = std::min(start + per_thread, cnt);
     }
@@ -239,17 +226,16 @@ START_TEST(t_multithreaded_insert)
         }
     }
 
-    ck_assert_int_eq(mbuffer->is_full(), 1);
-    ck_assert_int_eq(mbuffer->get_record_count(), cnt);
+    ck_assert_int_eq(buffer->is_full(), 1);
+    ck_assert_int_eq(buffer->get_record_count(), cnt);
 
     std::sort(records.begin(), records.end());
-    record_t *sorted_records = mbuffer->sorted_output();
+    record_t *sorted_records = buffer->sorted_output();
     for (size_t i=0; i<cnt; i++) {
         ck_assert_int_eq(sorted_records[i].key, records[i].first);
     }
 
-    delete mbuffer;
-    gsl_rng_free(rng);
+    delete buffer;
 }
 END_TEST
 

@@ -28,17 +28,17 @@
 #include <random>
 
 
-typedef std::pair<extension::key_t, extension::value_t> btree_record;
+typedef std::pair<extension::skey_t, extension::value_t> btree_record;
 struct btree_key_extract {
-    static const extension::key_t &get(const btree_record &v) {
+    static const extension::skey_t &get(const btree_record &v) {
         return v.first;
     }
 };
 
-typedef tlx::BTree<extension::key_t, btree_record, btree_key_extract> TreeMap;
+typedef psudb::BTree<extension::skey_t, btree_record, btree_key_extract> TreeMap;
 
 typedef struct record {
-    extension::key_t key;
+    extension::skey_t key;
     extension::value_t value;
     extension::weight_t weight;
 
@@ -51,14 +51,14 @@ typedef struct record {
     }
 } record;
 
-typedef std::pair<extension::key_t, extension::key_t> key_range;
+typedef std::pair<extension::skey_t, extension::skey_t> key_range;
 
 static gsl_rng *g_rng;
 static std::set<record> *g_to_delete;
 static bool g_osm_data;
 
-static extension::key_t g_min_key = UINT64_MAX;
-static extension::key_t g_max_key = 0;
+static extension::skey_t g_min_key = UINT64_MAX;
+static extension::skey_t g_max_key = 0;
 
 static size_t g_max_record_cnt = 0;
 static size_t g_reccnt = 0;
@@ -83,9 +83,9 @@ static unsigned int get_random_seed()
 }
 
 
-static extension::key_t osm_to_key(const char *key_field) {
+static extension::skey_t osm_to_key(const char *key_field) {
     double tmp_key = (atof(key_field) + 180) * 10e6;
-    return (extension::key_t) tmp_key;
+    return (extension::skey_t) tmp_key;
 }
 
 
@@ -113,7 +113,7 @@ static void delete_bench_env()
     delete g_to_delete;
 }
 
-static bool next_record(std::fstream *file, extension::key_t* key, extension::value_t* val, extension::weight_t *weight)
+static bool next_record(std::fstream *file, extension::skey_t* key, extension::value_t* val, extension::weight_t *weight)
 {
     if (g_reccnt >= g_max_record_cnt) return false;
 
@@ -166,7 +166,7 @@ static bool build_insert_vec(std::fstream *file, std::vector<record> &vec, size_
 
 static bool build_btree_insert_vec(std::fstream *file, std::vector<std::pair<btree_record, extension::weight_t>> &vec, size_t n)
 {
-    extension::key_t key;
+    extension::skey_t key;
     extension::value_t val;
     extension::weight_t weight;
 
@@ -188,9 +188,9 @@ static bool build_btree_insert_vec(std::fstream *file, std::vector<std::pair<btr
 
 }
 
-static bool build_avl_insert_vec(std::fstream *file, std::vector<std::pair<extension::key_t, extension::weight_t>> &vec, size_t n)
+static bool build_avl_insert_vec(std::fstream *file, std::vector<std::pair<extension::skey_t, extension::weight_t>> &vec, size_t n)
 {
-    extension::key_t key;
+    extension::skey_t key;
     extension::value_t val;
     extension::weight_t weight;
 
@@ -232,7 +232,7 @@ static bool warmup(std::fstream *file, extension::SamplingFramework *lsmtree, si
 {
     std::string line;
 
-    extension::key_t key;
+    extension::skey_t key;
     extension::value_t val;
     extension::weight_t weight;
 
@@ -253,19 +253,19 @@ static bool warmup(std::fstream *file, extension::SamplingFramework *lsmtree, si
         inserted++;
         lsmtree->append(key, val, weight, false, g_rng);
 
-        if (i > lsmtree->get_mbuffer_capacity() && del_buf_ptr >= del_buf_size) {
+        if (i > lsmtree->get_buffer_capacity() && del_buf_ptr >= del_buf_size) {
             lsmtree->range_sample(delbuf, del_buf_size, g_rng);
             del_buf_ptr = 0;
             deleted_keys.clear();
         }
 
-        if (i > lsmtree->get_mbuffer_capacity() && gsl_rng_uniform(g_rng) < delete_prop) {
+        if (i > lsmtree->get_buffer_capacity() && gsl_rng_uniform(g_rng) < delete_prop) {
             auto key = delbuf[del_buf_ptr].key;
             auto val = delbuf[del_buf_ptr].value;
             del_buf_ptr++;
 
             if (deleted_keys.find({key, val, weight}) == deleted_keys.end()) {
-                if (extension::DELETE_TAGGING) {
+                if (extension::DELETE_POLICY) {
                     lsmtree->delete_record(key, val, g_rng);
                 } else {
                     lsmtree->append(key, val, weight, true, g_rng);
@@ -291,13 +291,13 @@ static bool warmup(std::fstream *file, TreeMap *tree, size_t count, double delet
 {
     std::string line;
 
-    extension::key_t key;
+    extension::skey_t key;
     extension::value_t val;
     extension::weight_t weight;
 
     size_t del_buf_size = 100;
     size_t del_buf_idx = del_buf_size;
-    std::vector<extension::key_t> delbuf(del_buf_size);
+    std::vector<extension::skey_t> delbuf(del_buf_size);
 
     
     double last_percent = 0;
@@ -331,12 +331,12 @@ static bool warmup(std::fstream *file, TreeMap *tree, size_t count, double delet
 }
 
 
-static key_range get_key_range(extension::key_t min, extension::key_t max, double selectivity)
+static key_range get_key_range(extension::skey_t min, extension::skey_t max, double selectivity)
 {
     size_t range_length = (max - min) * selectivity;
 
-    extension::key_t max_bottom = max - range_length;
-    extension::key_t bottom;
+    extension::skey_t max_bottom = max - range_length;
+    extension::skey_t bottom;
 
     while ((bottom = gsl_rng_get(g_rng)) > range_length) 
         ;
@@ -351,10 +351,10 @@ static void reset_extension_perf_metrics() {
      * sampling function itself.
      */
 
-    extension::mbuffer_alias_time = 0;
+    extension::buffer_alias_time = 0;
     extension::alias_time = 0;
     extension::alias_query_time = 0;
-    extension::mbuffer_sample_time = 0;
+    extension::buffer_sample_time = 0;
     extension::level_sample_time = 0;
     extension::rejection_check_time = 0;
 }
@@ -362,7 +362,7 @@ static void reset_extension_perf_metrics() {
 
 static void build_lsm_tree(extension::SamplingFramework *tree, std::fstream *file) {
 
-    extension::key_t key;
+    extension::skey_t key;
     extension::value_t val;
     extension::weight_t weight;
 
@@ -375,7 +375,7 @@ static void build_lsm_tree(extension::SamplingFramework *tree, std::fstream *fil
 
 static void build_btree(TreeMap *tree, std::fstream *file) {
     // for looking at the insert time distribution
-    extension::key_t key;
+    extension::skey_t key;
     extension::value_t val;
     extension::weight_t weight;
 

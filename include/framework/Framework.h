@@ -15,7 +15,6 @@
 #include "framework/MutableBuffer.h"
 #include "framework/Level.h"
 #include "ds/Alias.h"
-
 #include "util/timer.h"
 
 namespace extension {
@@ -29,11 +28,11 @@ thread_local size_t tombstone_rejections = 0;
 /*
  * thread_local size_t various_sampling_times go here.
  */
-thread_local size_t mbuffer_alias_time = 0;
+thread_local size_t buffer_alias_time = 0;
 thread_local size_t alias_time = 0;
 thread_local size_t alias_query_time = 0;
 thread_local size_t rejection_check_time = 0;
-thread_local size_t mbuffer_sample_time = 0;
+thread_local size_t buffer_sample_time = 0;
 thread_local size_t level_sample_time = 0;
 
 
@@ -41,7 +40,7 @@ thread_local size_t level_sample_time = 0;
  * LSM Tree configuration global variables
  */
 
-// True for mbuffer rejection sampling
+// True for buffer rejection sampling
 static constexpr bool REJECTION_SAMPLING = true;
 
 // True for leveling, false for tiering
@@ -57,8 +56,8 @@ struct sample_state {
     SamplingFramework *tree; 
     ShardId shid;
     char *buff;
-    MutableBuffer *mbuffer;
-    size_t mbuffer_cutoff;
+    MutableBuffer *buffer;
+    size_t buffer_cutoff;
 };
 
 
@@ -66,14 +65,14 @@ class SamplingFramework {
     friend bool check_deleted();
 
 public:
-    SamplingFramework(size_t mbuffer_cap, size_t scale_factor, double max_tombstone_prop, 
-                      double max_rejection_rate, gsl_rng *rng) 
+    SamplingFramework(size_t buffer_cap, size_t scale_factor, double max_tombstone_prop, 
+                      double max_rejection_rate) 
         : 
           m_scale_factor(scale_factor), 
           m_max_tombstone_prop(max_tombstone_prop),
           m_max_rejection_rate(max_rejection_rate),
           m_last_level_idx(-1),
-          m_buffer(new MutableBuffer(mbuffer_cap, REJECTION_SAMPLING, max_tombstone_prop*mbuffer_cap, rng))
+          m_buffer(new MutableBuffer(buffer_cap, REJECTION_SAMPLING, max_tombstone_prop*buffer_cap))
     {}
 
     ~SamplingFramework() {
@@ -84,62 +83,62 @@ public:
         }
     }
 
-    int append(const key_t& key, const value_t& val, double weight, bool tombstone, gsl_rng *rng) {
+    int append(const skey_t& key, const value_t& val, double weight, bool tombstone, gsl_rng *rng) {
         if (m_buffer->is_full()) {
-            merge_mbuffer(rng);
+            merge_buffer();
         }
 
         return m_buffer->append(key, val, weight, tombstone);
     }
 
 
-    int delete_record(const key_t& key, const value_t& val, gsl_rng *rng) {
+    int delete_record(const skey_t& key, const value_t& val, gsl_rng *rng) {
         assert(DELETE_POLICY);
 
         // Check the levels first. This assumes there aren't 
         // any undeleted duplicate records.
         for (auto level : m_levels) {
-            if (level && level->delete_record(key, val)) {
+            if (level && level->delete_record({key, val})) {
                 return 1;
             }
         }
 
-        // the mbuffer will take the longest amount of time, and 
+        // the buffer will take the longest amount of time, and 
         // probably has the lowest probability of having the record,
         // so we'll check it last.
-        return m_buffer->delete_record(key, val);
+        return m_buffer->delete_record({key, val});
     }
 
     void range_sample(record_t *sample_set, size_t sample_sz, gsl_rng *rng) {
         TIMER_INIT();
 
-        ds::Alias *mbuffer_alias = nullptr;
-        size_t mbuffer_cutoff = 0;
+        psudb::Alias *buffer_alias = nullptr;
+        size_t buffer_cutoff = 0;
 
-        double mbuffer_weight = m_buffer->get_total_weight();
+        double buffer_weight = m_buffer->get_total_weight();
 
         TIMER_START();
-        // Get the shard weights for each level. Index 0 is the mbuffer,
+        // Get the shard weights for each level. Index 0 is the buffer,
         // represented by nullptr.
         std::vector<std::pair<ShardId, ShardWSS *>> shards;
         shards.push_back({{-1, -1}, nullptr});
 
         std::vector<double> shard_weights;
-        shard_weights.push_back(mbuffer_weight);
+        shard_weights.push_back(buffer_weight);
 
         for (auto &level : m_levels) {
             level->get_shard_weights(shard_weights, shards);
         }
 
         if (shard_weights.size() == 1 && shard_weights[0] == 0) {
-            delete mbuffer_alias;
+            delete buffer_alias;
             return; // no records in the sampling range
         }
         double tot_weight = std::accumulate(shard_weights.begin(), shard_weights.end(), 0);
         for (auto& w: shard_weights) w /= tot_weight;
 
         // Construct alias structure
-        auto alias = ds::Alias(shard_weights);
+        auto alias = psudb::Alias(shard_weights);
         TIMER_STOP();
 
         alias_time += TIMER_RESULT();
@@ -151,8 +150,8 @@ public:
 
         sample_state state;
         state.tree = this;
-        state.mbuffer = m_buffer;
-        state.mbuffer_cutoff = mbuffer_cutoff;
+        state.buffer = m_buffer;
+        state.buffer_cutoff = buffer_cutoff;
 
         size_t passes = 0;
         do {
@@ -168,19 +167,19 @@ public:
 
             TIMER_START();
             while (shard_samples[0] > 0) {
-                if (!REJECTION_SAMPLING && !mbuffer_alias) {
+                if (!REJECTION_SAMPLING && !buffer_alias) {
                     TIMER_START();
-                    m_buffer->get_sample_range(&mbuffer_alias, &mbuffer_cutoff);
+                    m_buffer->get_sample_range(&buffer_alias, &buffer_cutoff);
                     TIMER_STOP();
 
-                    mbuffer_alias_time += TIMER_RESULT();
+                    buffer_alias_time += TIMER_RESULT();
                 }
 
                 const record_t* rec;
                 if (REJECTION_SAMPLING) {
                     rec = m_buffer->get_sample(rng);
                 } else {
-                    rec = m_buffer->get_record_at(mbuffer_alias->get(rng));
+                    rec = m_buffer->get_record_at(buffer_alias->get(rng));
                 }
 
                 if (DELETE_POLICY) {
@@ -190,7 +189,7 @@ public:
                         rejections++;
                     }
                 } else {
-                    if (rec && !m_buffer->check_tombstone(rec->key, rec->value)) {
+                    if (rec && !m_buffer->check_tombstone(*rec)) {
                         sample_set[sample_idx++] = *rec;
                     } else {
                         rejections++;
@@ -200,7 +199,7 @@ public:
                 shard_samples[0]--;
             }
             TIMER_STOP();
-            mbuffer_sample_time += TIMER_RESULT();
+            buffer_sample_time += TIMER_RESULT();
 
             TIMER_START();
             for (size_t i=1; i<shard_samples.size(); i++) {
@@ -217,17 +216,17 @@ public:
             passes++;
         } while (sample_idx < sample_sz);
 
-        delete mbuffer_alias;
+        delete buffer_alias;
 
-        enforce_rejection_rate(rng);
+        enforce_rejection_rate();
     }
 
-    // Checks the tree and mbuffer for a tombstone corresponding to
+    // Checks the tree and buffer for a tombstone corresponding to
     // the provided record in any shard *above* the shid, which
     // should correspond to the shard containing the record in question
     // 
     // Passing INVALID_shid indicates that the record exists within the MutableBuffer
-    bool is_deleted(const record_t *record, const ShardId &shid, size_t mbuffer_cutoff) {
+    bool is_deleted(const record_t *record, const ShardId &shid, size_t buffer_cutoff) {
 
         TIMER_INIT();
 
@@ -241,22 +240,22 @@ public:
 
         // Otherwise, we need to look for a tombstone.
 
-        // check for tombstone in the mbuffer. This will require accounting for the cutoff eventually.
-        if (m_buffer->check_tombstone(record->key, record->value)) {
+        // check for tombstone in the buffer. This will require accounting for the cutoff eventually.
+        if (m_buffer->check_tombstone(*record)) {
             TIMER_STOP();
             rejection_check_time += TIMER_RESULT();
             return true;
         }
 
-        // if the record is in the mbuffer, then we're done.
-        if (shid == INVALID_shid) {
+        // if the record is in the buffer, then we're done.
+        if (shid == INVALID_SHID) {
             TIMER_STOP();
             rejection_check_time += TIMER_RESULT();
             return false;
         }
 
         for (size_t lvl=0; lvl<=shid.level_idx; lvl++) {
-            if (m_levels[lvl]->check_tombstone(0, record->key, record->value)) {
+            if (m_levels[lvl]->check_tombstone(0, *record)) {
                 TIMER_STOP();
                 rejection_check_time += TIMER_RESULT();
                 return true;
@@ -264,7 +263,7 @@ public:
         }
 
         // check the level containing the shard
-        auto res = m_levels[shid.level_idx]->check_tombstone(shid.shard_idx + 1, record->key, record->value);
+        auto res = m_levels[shid.level_idx]->check_tombstone(shid.shard_idx + 1, {record->key, record->value});
 
         TIMER_STOP();
         rejection_check_time += TIMER_RESULT();
@@ -362,7 +361,7 @@ public:
         return true;
     }
 
-    size_t get_mbuffer_capacity() {
+    size_t get_buffer_capacity() {
         return m_buffer->get_capacity();
     }
 
@@ -377,14 +376,14 @@ private:
 
     level_index m_last_level_idx;
 
-    inline bool rejection(const record_t *record, ShardId shid, const key_t& lower_bound, const key_t& upper_bound, size_t mbuffer_cutoff) {
+    inline bool rejection(const record_t *record, ShardId shid, const skey_t& lower_bound, const skey_t& upper_bound, size_t buffer_cutoff) {
         if (record->is_tombstone()) {
             tombstone_rejections++;
             return true;
         } else if (record->key < lower_bound|| record->key > upper_bound) {
             bounds_rejections++;
             return true;
-        } else if (is_deleted(record, shid, mbuffer_cutoff)) {
+        } else if (is_deleted(record, shid, buffer_cutoff)) {
             deletion_rejections++;
             return true;
         }
@@ -418,18 +417,18 @@ private:
 
     // Merge the mutable buffer down into the tree, completing any required other
     // merges to make room for it.
-    inline void merge_mbuffer(gsl_rng *rng) {
+    inline void merge_buffer() {
         TIMER_INIT();
         TIMER_START();
 
         if (!can_merge_with(0, m_buffer->get_record_count())) {
-            merge_down(0, rng);
+            merge_down(0);
         }
 
-        merge_mbuffer_into_l0(m_buffer, rng);
+        merge_buffer_into_l0(m_buffer);
         TIMER_STOP();
 
-        enforce_tombstone_maximum(0, rng);
+        enforce_tombstone_maximum(0);
 
         m_buffer->truncate();
 
@@ -441,19 +440,19 @@ private:
 
     /*
      * Merge the specified level down into the tree. The level index must be
-     * non-negative (i.e., this function cannot be used to merge the mbuffer). This
+     * non-negative (i.e., this function cannot be used to merge the buffer). This
      * routine will recursively perform any necessary merges to make room for the 
      * specified level.
      */
-    inline void merge_down(level_index idx, gsl_rng *rng) {
+    inline void merge_down(level_index idx) {
         level_index merge_base_level = find_mergable_level(idx);
         if (merge_base_level == -1) {
             merge_base_level = grow();
         }
 
         for (level_index i=merge_base_level; i>idx; i--) {
-            merge_levels(i, i-1, rng);
-            enforce_tombstone_maximum(i, rng);
+            merge_levels(i, i-1);
+            enforce_tombstone_maximum(i);
         }
 
         return;
@@ -492,7 +491,7 @@ private:
      * are skipped in the merge process--otherwise the tombstone ordering
      * invariant may be violated by the merge operation.
      */
-    inline void merge_levels(level_index base_level, level_index incoming_level, gsl_rng *rng) {
+    inline void merge_levels(level_index base_level, level_index incoming_level) {
         bool base_disk_level;
         bool incoming_disk_level;
 
@@ -506,30 +505,30 @@ private:
         // merging two memory levels
         if (LAYOUT_POLICY) {
             auto tmp = m_levels[base_idx];
-            m_levels[base_idx] = Level::merge_levels(m_levels[base_idx], m_levels[incoming_idx], DELETE_POLICY, rng);
+            m_levels[base_idx] = Level::merge_levels(m_levels[base_idx], m_levels[incoming_idx], DELETE_POLICY);
             mark_as_unused(tmp);
         } else {
-            m_levels[base_idx]->append_merged_shards(m_levels[incoming_idx], rng);
+            m_levels[base_idx]->append_merged_shards(m_levels[incoming_idx]);
         }
 
         mark_as_unused(m_levels[incoming_idx]);
         m_levels[incoming_idx] = new Level(incoming_level, (LAYOUT_POLICY) ? 1 : m_scale_factor, DELETE_POLICY);
     }
 
-    inline void merge_mbuffer_into_l0(MutableBuffer *mbuffer, gsl_rng *rng) {
+    inline void merge_buffer_into_l0(MutableBuffer *buffer) {
         assert(m_levels[0]);
         if (LAYOUT_POLICY) {
             // FIXME: Kludgey implementation due to interface constraints.
             auto old_level = m_levels[0];
             auto temp_level = new Level(0, 1, DELETE_POLICY);
-            temp_level->append_buffer(mbuffer, rng);
-            auto new_level = Level::merge_levels(old_level, temp_level, DELETE_POLICY, rng);
+            temp_level->append_buffer(buffer);
+            auto new_level = Level::merge_levels(old_level, temp_level, DELETE_POLICY);
 
             m_levels[0] = new_level;
             delete temp_level;
             mark_as_unused(old_level);
         } else {
-            m_levels[0]->append_buffer(mbuffer, rng);
+            m_levels[0]->append_buffer(buffer);
         }
     }
 
@@ -548,19 +547,19 @@ private:
      * if the limit is exceeded, forcibly merge levels until all
      * levels below idx are below the limit.
      */
-    inline void enforce_tombstone_maximum(level_index idx, gsl_rng *rng) {
+    inline void enforce_tombstone_maximum(level_index idx) {
         assert(m_levels[idx]);
 
         long double ts_prop = (long double) m_levels[idx]->get_tombstone_count() / (long double) calc_level_record_capacity(idx);
 
         if (ts_prop > (long double) m_max_tombstone_prop) {
-            merge_down(idx, rng);
+            merge_down(idx);
         }
 
         return;
     }
 
-    inline void enforce_rejection_rate(gsl_rng *rng) {
+    inline void enforce_rejection_rate() {
         if (m_levels.size() == 0) {
             return;
         }
@@ -568,15 +567,15 @@ private:
         for (size_t i=0; i<m_last_level_idx; i++) {
             if (m_levels[i]) {
                 if (m_levels[i]->get_rejection_rate() > m_max_rejection_rate) {
-                    merge_down(i, rng);
+                    merge_down(i);
                 }
             }
         } 
     }
 
     /*
-     * Assume that level "0" should be larger than the mbuffer. The mbuffer
-     * itself is index -1, which should return simply the mbuffer capacity.
+     * Assume that level "0" should be larger than the buffer. The buffer
+     * itself is index -1, which should return simply the buffer capacity.
      */
     inline size_t calc_level_record_capacity(level_index idx) {
         return m_buffer->get_capacity() * pow(m_scale_factor, idx+1);
@@ -586,7 +585,7 @@ private:
      * Returns the actual number of records present on a specified level. An
      * index value of -1 indicates the mutable buffer. Can optionally pass in
      * a pointer to the mutable buffer to use, if desired. Otherwise, there are
-     * no guarantees about which mbuffer will be accessed if level_index is -1.
+     * no guarantees about which buffer will be accessed if level_index is -1.
      */
     inline size_t get_level_record_count(level_index idx) {
         assert(idx >= -1);
@@ -600,7 +599,7 @@ private:
     /*
      * Determines if the specific level can merge with another record containing
      * incoming_rec_cnt number of records. The provided level index should be 
-     * non-negative (i.e., not refer to the mbuffer) and will be automatically
+     * non-negative (i.e., not refer to the buffer) and will be automatically
      * translated into the appropriate index into either the disk or memory level
      * vector.
      */
@@ -625,7 +624,7 @@ private:
 
 
 bool check_deleted(const record_t* record, sample_state *state) {
-    return state->tree->is_deleted(record, state->shid, state->mbuffer_cutoff);
+    return state->tree->is_deleted(record, state->shid, state->buffer_cutoff);
 }
 
 }

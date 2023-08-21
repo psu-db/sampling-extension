@@ -9,9 +9,9 @@
  */
 #pragma once
 
-#include "util/base.h"
+#include "util/alignment.h"
 
-namespace ds {
+namespace extension {
 
 static double BF_FPR = .01;
 static size_t BF_HASH_FUNCS = 7;

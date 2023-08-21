@@ -60,7 +60,7 @@ static bool insert_benchmark(extension::SamplingFramework *tree, std::fstream *f
                 delete_idx++;
 
                 if (deleted.find({key, val, weight}) == deleted.end()) {
-                    if (extension::DELETE_TAGGING) {
+                    if (extension::DELETE_POLICY) {
                         tree->delete_record(key, val, g_rng);
                     } else {
                         tree->append(key, val, weight, true, g_rng);
@@ -143,7 +143,7 @@ int main(int argc, char **argv)
 
     init_bench_env(record_count, true, use_osm);
 
-    auto de_wss = extension::SamplingFramework(memtable_size, scale_factor, max_delete_prop, 100, g_rng);
+    auto de_wss = extension::SamplingFramework(memtable_size, scale_factor, max_delete_prop, 100);
 
     std::fstream datafile;
     datafile.open(filename, std::ios::in);

@@ -16,7 +16,7 @@
 
 #include "framework/MutableBuffer.h"
 
-#include "util/Cursor.h"
+#include "base/Cursor.h"
 #include "util/timer.h"
 #include "ds/Alias.h"
 
@@ -25,24 +25,20 @@ namespace extension {
 struct sample_state;
 bool check_deleted(const record_t *record, sample_state *state);
 
-thread_local size_t m_shard_cancelations = 0;
-
 class ShardWSS {
 public:
 
-    ShardWSS(MutableBuffer* mbuffer, ds::BloomFilter* bf, bool tagging)
+    ShardWSS(MutableBuffer* mbuffer, psudb::BloomFilter<skey_t>* bf, bool tagging)
     : m_reccnt(0), m_tombstone_cnt(0), m_rejection_cnt(0), m_ts_check_cnt(0), 
       m_deleted_cnt(0), m_total_weight(0), m_tagging(tagging) {
         TIMER_INIT();
+
         TIMER_START();
         std::vector<double> weights;
         weights.reserve(mbuffer->get_record_count());
-        size_t len = mbuffer->get_record_count() * sizeof(record_t);
-        size_t alloc_size = len + (CACHELINE_SIZE - len % CACHELINE_SIZE);
-        assert(alloc_size % CACHELINE_SIZE == 0);
-        m_data = (record_t*)std::aligned_alloc(CACHELINE_SIZE, alloc_size);
+        size_t alloc_len = mbuffer->get_record_count() * sizeof(record_t);
+        m_data = (record_t*) psudb::sf_aligned_alloc(psudb::CACHELINE_SIZE, &alloc_len);
 
-        size_t offset = 0;
         auto base = mbuffer->sorted_output();
         auto stop = base + mbuffer->get_record_count();
         TIMER_STOP();
@@ -50,39 +46,31 @@ public:
         auto setup_time = TIMER_RESULT();
 
         TIMER_START();
-        if (m_tagging) {
-            while (base < stop) {
-                if (!base->get_delete_status()) {
-                    base->header &= 3;
-                    m_data[m_reccnt++] = *base;
-                    m_total_weight += base->weight;
-                    weights.push_back((double)base->weight);
+        for (auto ptr = base; ptr < stop; ptr++) {
+            if (m_tagging && ptr->get_delete_status()) {
+                continue;
+            } else if (!(ptr->is_tombstone()) && (ptr + 1) < stop) {
+                if (*ptr == *(ptr + 1) && (ptr + 1)->is_tombstone()) {
+                    // we need to skip over both the record _and_ its tombstone,
+                    // so we'll increment the pointer an extra time here.
+                    ptr++;
+                    continue;
                 }
-                base++;
             }
-        } else {
-            while (base < stop) {
-                if (!base->is_tombstone() && (base + 1 < stop)
-                    && base->match(base + 1) && (base + 1)->is_tombstone()) {
-                    base += 2;
-                    m_shard_cancelations++;
-                } else {
-                    //Masking off the ts.
-                    base->header &= 1;
-                    m_data[m_reccnt++] = *base;
-                    if (base->is_tombstone()) {
-                        ++m_tombstone_cnt;
-                        bf->insert(base->key, sizeof(key_t));
-                    }
-                    base ++;
-                    m_total_weight += base->weight;
-                    weights.push_back((double) base->weight);
-                }
+
+            ptr->header &= 1;
+            m_data[m_reccnt++] = *ptr;
+            m_total_weight+= ptr->weight;
+            weights.push_back(ptr->weight);
+
+            if (bf && ptr->is_tombstone()) {
+                m_tombstone_cnt++;
+                bf->insert(ptr->key);
             }
         }
         TIMER_STOP();
 
-        auto merge_time = TIMER_RESULT();
+        auto data_const_time = TIMER_RESULT();
 
         TIMER_START();
         // normalize the weights array
@@ -91,17 +79,17 @@ public:
         }
 
         // build the alias structure
-        m_alias = new ds::Alias(weights);
+        m_alias = new psudb::Alias(weights);
         TIMER_STOP();
 
-        auto alias_time = TIMER_RESULT();
+        auto ssi_const_time = TIMER_RESULT();
 
         #ifdef INSTRUMENT_MERGING
-        fprintf(stderr, "buffer merge\t%ld\t%ld\t%ld\n", setup_time, merge_time, alias_time);
+        fprintf(stderr, "buffer merge\t%ld\t%ld\t%ld\n", setup_time, data_const_time, ssi_const_time);
         #endif
     }
 
-    ShardWSS(ShardWSS** shards, size_t len, ds::BloomFilter* bf, bool tagging)
+    ShardWSS(ShardWSS** shards, size_t len, psudb::BloomFilter<skey_t>* bf, bool tagging)
     : m_reccnt(0), m_tombstone_cnt(0), m_total_weight(0), m_rejection_cnt(0), m_ts_check_cnt(0), m_deleted_cnt(0), m_tagging(tagging) {
 
         TIMER_INIT();
@@ -110,42 +98,36 @@ public:
         std::vector<double> weights;
         cursors.reserve(len);
 
-        size_t attemp_reccnt = 0;
+        size_t attempted_reccnt = 0;
         
         for (size_t i = 0; i < len; ++i) {
-            //assert(shards[i]);
             if (shards[i]) {
                 auto base = shards[i]->sorted_output();
                 cursors.emplace_back(Cursor{base, base + shards[i]->get_record_count(), 0, shards[i]->get_record_count()});
-                attemp_reccnt += shards[i]->get_record_count();
+                attempted_reccnt += shards[i]->get_record_count();
             } else {
                 cursors.emplace_back(g_empty_cursor);
             }
         }
 
-        auto attempt_len = attemp_reccnt * sizeof(record_t);
-        size_t alloc_size = attempt_len + (CACHELINE_SIZE - attempt_len % CACHELINE_SIZE);
-        assert(alloc_size % CACHELINE_SIZE == 0);
-        m_data = (record_t*)std::aligned_alloc(CACHELINE_SIZE, alloc_size);
-        weights.reserve(attemp_reccnt);
+        auto alloc_len = attempted_reccnt * sizeof(record_t);
+        m_data = (record_t*) psudb::sf_aligned_alloc(psudb::CACHELINE_SIZE, &alloc_len);
 
-        size_t offset = 0;
+        weights.reserve(attempted_reccnt);
         TIMER_STOP();
         auto setup_time = TIMER_RESULT();
 
         TIMER_START();
         size_t reccnt = 0;
-
-
         Cursor *next = get_next(cursors);
         do {
             Cursor *current = next;
-            next = get_next(cursors, current); //something;
+            next = get_next(cursors, current); 
 
             // Handle tombstone cancellation case if record tagging is not
             // enabled
             if (!m_tagging && !current->ptr->is_tombstone() && current != next &&
-                next->ptr < next->end && current->ptr->match(next->ptr) && 
+                next->ptr < next->end && *(current->ptr) == *(next->ptr) && 
                 next->ptr->is_tombstone()) {
                 
                 reccnt += 2;
@@ -167,7 +149,7 @@ public:
             // counter.
             if (!m_tagging && current->ptr->is_tombstone()) {
                 ++m_tombstone_cnt;
-                bf->insert(current->ptr->key, sizeof(key_t));
+                bf->insert(current->ptr->key);
             }
 
             // Copy the record into the new shard and increment the associated counters
@@ -176,7 +158,7 @@ public:
             weights.push_back((double) current->ptr->weight);
             advance_cursor(current);
             reccnt += 1;
-        } while (reccnt < attemp_reccnt);
+        } while (reccnt < attempted_reccnt);
         TIMER_STOP();
         auto merge_time = TIMER_RESULT();
 
@@ -187,7 +169,7 @@ public:
         }
 
         // build the alias structure
-        m_alias = new ds::Alias(weights);
+        m_alias = new psudb::Alias(weights);
         TIMER_STOP();
 
         auto alias_time = TIMER_RESULT();
@@ -204,15 +186,15 @@ public:
     }
 
 
-    bool delete_record(const key_t& key, const value_t& val) {
-        size_t idx = get_lower_bound(key);
+    bool delete_record(const record_t &rec) {
+        size_t idx = get_lower_bound(rec.key);
         if (idx >= m_reccnt) {
             return false;
         }
 
-        while (idx < m_reccnt && m_data[idx].lt(key, val)) ++idx;
+        while (idx < m_reccnt && m_data[idx] < rec) ++idx;
 
-        if (m_data[idx].match(key, val, false)) {
+        if (idx < m_reccnt && m_data[idx] == rec) {
             m_data[idx].set_delete_status();
             m_deleted_cnt++;
             return true;
@@ -261,7 +243,7 @@ public:
         return sampled_cnt;
     }
 
-    size_t get_lower_bound(const key_t& key) const {
+    size_t get_lower_bound(const skey_t& key) const {
         size_t min = 0;
         size_t max = m_reccnt - 1;
 
@@ -278,19 +260,23 @@ public:
         return min;
     }
 
-    bool check_tombstone(const key_t& key, const value_t& val) {
+    bool check_tombstone(const record_t &rec) {
         m_ts_check_cnt += 1;
 
-        size_t idx = get_lower_bound(key);
+        size_t idx = get_lower_bound(rec.key);
         if (idx >= m_reccnt) {
             return false;
         }
 
-        while (idx < m_reccnt && m_data[idx].lt(key, val)) ++idx;
+        while (idx < m_reccnt && m_data[idx] < rec) ++idx;
 
-        bool result = m_data[idx].match(key, val, true);
+        if (idx >= m_reccnt) {
+            return false;
+        }
 
-        if (result) {
+        bool result = m_data[idx] == rec;
+
+        if (result && m_data[idx].is_tombstone()) {
             m_rejection_cnt++;
         }
         return result;
@@ -321,14 +307,13 @@ public:
     
 private:
     record_t* m_data;
-    ds::Alias *m_alias;
+    psudb::Alias *m_alias;
+
     size_t m_reccnt;
     size_t m_tombstone_cnt;
     size_t m_deleted_cnt;
     weight_t m_total_weight;
 
-    // The number of rejections caused by tombstones
-    // in this ShardWSS.
     size_t m_rejection_cnt;
     size_t m_ts_check_cnt;
 

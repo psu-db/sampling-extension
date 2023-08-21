@@ -18,7 +18,7 @@
 #include <cstddef>
 #include <string>
 
-#include "util/base.h"
+#include "util/alignment.h"
 
 namespace extension {
 
@@ -26,17 +26,19 @@ using std::byte;
 
 // Represents a page offset within a specific file (physical or virtual)
 typedef uint32_t PageNum;
+const size_t PAGE_MAX = UINT32_MAX;
 
 // Byte offset within a page. Also used for lengths of records, etc.,
 // within the codebase. size_t isn't necessary, as the maximum offset
 // is only parm::PAGE_SIZE 
 typedef uint16_t PageOffset;
+const size_t PAGE_OFFSET_MAX = UINT16_MAX;
 
 // A unique identifier for a frame within a buffer or cache.
 typedef int32_t FrameId;
+const size_t FRAMEID_MAX = UINT32_MAX;
 
-// A unique timestamp for use in MVCC concurrency control. Currently stored in
-// record headers, but not used by anything.
+// A unique timestamp for use in MVCC concurrency control.
 typedef uint32_t Timestamp;
 const Timestamp TIMESTAMP_MIN = 0;
 const Timestamp TIMESTAMP_MAX = UINT32_MAX;
@@ -62,12 +64,40 @@ struct ShardId {
     }
 };
 
-const ShardId INVALID_shid = {-1, -1};
+const ShardId INVALID_SHID = {-1, -1};
+
+/*
+ * Record component types--adjust these to control data sizes, etc.
+ */
+
+/* 
+ * Record header information--used primarily for tombstone/delete bits
+ * right now.
+ */
+typedef uint32_t hdr_t;    
+
+/*
+ * Sampling key type. key_t is not used anymore due to confusing
+ * conflict with the POSIX type of the same name.
+ */
+typedef uint64_t skey_t;    
+
+/*
+ * Record value type.
+ */
+typedef uint32_t value_t;
+
+/*
+ * Weight type for weighted sampling applications.
+ */
+typedef uint64_t weight_t;
 
 struct SampleRange {
     ShardId shid;
-    size_t low;
-    size_t high;
+    skey_t low;
+    skey_t high;
 };
+
+
 
 }
