@@ -4,7 +4,7 @@
  * Copyright (C) 2023 Douglas B. Rumbaugh <drumbaugh@psu.edu> 
  *                    Dong Xie <dongx@psu.edu>
  *
- * All rights reserved. Published under the Simplified BSD License.
+ * All rights reserved. Published under the Modified BSD License.
  *
  */
 #pragma once
@@ -16,7 +16,7 @@
 
 namespace extension {
 struct Cursor {
-    record_t *ptr;
+    const record_t *ptr;
     const record_t *end;
     size_t cur_rec_idx;
     size_t rec_cnt;
