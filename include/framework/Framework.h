@@ -484,17 +484,10 @@ private:
      * invariant may be violated by the merge operation.
      */
     inline void merge_levels(level_index base_level, level_index incoming_level) {
-        bool base_disk_level;
-        bool incoming_disk_level;
-
         size_t base_idx = base_level; 
         size_t incoming_idx = incoming_level;
 
-        // If the base level is a memory level, then the incoming level
-        // cannot be a disk level.
-        assert(!(!base_disk_level && incoming_disk_level));
-
-        // merging two memory levels
+        /* merging two memory levels */
         if (LAYOUT_POLICY) {
             auto tmp = m_levels[base_idx];
             m_levels[base_idx] = Level::merge_levels(m_levels[base_idx], m_levels[incoming_idx], DELETE_POLICY);
