@@ -4,7 +4,7 @@
  * Copyright (C) 2023 Douglas B. Rumbaugh <drumbaugh@psu.edu> 
  *                    Dong Xie <dongx@psu.edu>
  *
- * All rights reserved. Published under the Simplified BSD License.
+ * All rights reserved. Published under the Revised BSD License.
  *
  */
 #include <check.h>
