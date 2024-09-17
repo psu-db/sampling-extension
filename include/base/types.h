@@ -4,7 +4,7 @@
  * Copyright (C) 2023 Douglas B. Rumbaugh <drumbaugh@psu.edu>
  *                    Dong Xie <dongx@psu.edu>
  *
- * All rights reserved. Published under the Simplified BSD License.
+ * All rights reserved. Published under the Revised BSD License.
  *
  * A centralized header file for various datatypes used throughout the
  * code base. There are a few very specific types, such as header formats,
