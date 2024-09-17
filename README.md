@@ -113,6 +113,7 @@ key, uint32_t value, uint32_t header, and uint64_t weight.
 The methods supported by the framework are as follows,
 
 1. `append(key, value, weight, tombstone)`
+   
     Insert a new weighted key-value pair into the structure. `tombstone`
     should be set to `false` to insert a record. If tombstone-based deletes
     are in use, a record can be deleted by inserting it using this method,
@@ -122,7 +123,8 @@ The methods supported by the framework are as follows,
 
     Returns 1 if the insert succeeds, and 0 if it does not.
 
-2. `delete_record(key, value)`
+3. `delete_record(key, value)`
+   
     When TAGGING is used as the delete policy, this method performs a lookup
     for a record matching the specified key and value and marks it as deleted
     in its header when found. 
@@ -131,13 +133,15 @@ The methods supported by the framework are as follows,
     the delete to fail is if a record matching the specified key and value
     is not found.
 
-3. `range_sample(sample_set, sample_sz, rng)`
+5. `range_sample(sample_set, sample_sz, rng)`
+   
    Draws a weighted sample of `sample_sz` records iid from the inserted
    records and places them into the buffer specified by `sample_set`. If
    `rng` is null, or the provided buffer is not large enough, the behavior
    of this method is undefined.
 
-4. `create_static_structure()`
+7. `create_static_structure()`
+   
    Creates and returns a single, combined instance of the static data
    structure being dynamized containing all of the records currently
    within the framework.
